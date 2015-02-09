@@ -1,0 +1,151 @@
+- hosts: test
+  user: vagrant
+  sudo: no
+  vars:
+    foam_version: 2.3.x
+    foam_prefix: /opt/OpenFOAM
+    third_version: 2.3.1
+    third_urf: http://downloads.sourceforge.net/project/foam/foam/2.3.1/ThirdParty-2.3.1.tgz?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Ffoam%2Ffiles%2Ffoam%2F2.3.1%2F&ts=1422752188&use_mirror=jaist
+
+  tasks:
+
+    - name: yum install git.
+      yum: name=git state=latest
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: apt-get install git-core
+      apt: name=git-core state=latest update_cache=yes
+      sudo: yes
+      when: ansible_distribution == "Ubuntu"
+
+    - name: git get OpenFOAM
+      git: repo=git://github.com/OpenFOAM/OpenFOAM-{{foam_version}}.git
+           dest={{foam_prefix}}/OpenFOAM-{{foam_version}}
+           accept_hostkey=True
+           update=yes
+      sudo: yes
+
+    - name: download ThirdParty source
+      get_url: url={{third_urf}}
+               dest={{foam_prefix}}/ThirdParty-{{third_version}}.tar.gz
+      sudo: yes
+
+    - name: tar xzf ThirdParty 
+      command: tar zxf ThirdParty-{{third_version}}.tar.gz 
+        chdir={{foam_prefix}}
+        creates=ThirdParty-{{third_version}}
+      sudo: yes
+
+    - name: mv ThirdParty-{{third_version}} ThirdParty-{{foam_version}}
+      shell: >-
+        mv ThirdParty-{{third_version}} ThirdParty-{{foam_version}}
+        chdir={{foam_prefix}}
+        creates=ThirdParty-{{foam_version}}
+      sudo: yes
+
+    - name: install the 'Development tools' package group
+      yum: name="@Development tools" state=latest
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: yum install package to build openfoam.
+      yum: name={{item}} state=latest
+      with_items:
+          - openmpi
+          - openmpi-devel
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: yum-config-manager --add-repo yum_repositories
+      command: "yum-config-manager --nogpgcheck --add-repo {{ item }}"
+      with_items: http://dl.atrpms.net/el6-x86_64/atrpms/stable
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: yum install package to build openfoam.
+      yum: name={{item}} state=latest disable_gpg_check=yes
+      with_items:
+        - qtwebkit
+        - qtwebkit-devel
+        - CGAL
+        - CGAL-devel
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: ln -s libboost_thread.so
+      shell: >-
+        ln -s /usr/lib64/libboost_thread-mt.so /usr/lib64/libboost_thread.so
+        creates=/usr/lib64/libboost_thread-mt.so
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: yum-config-manager --add-repo yum_repositories
+      command: "yum-config-manager --nogpgcheck --add-repo {{ item }}"
+      with_items:
+        - http://springdale.princeton.edu/data/puias/6.5/x86_64/os
+        - http://springdale.princeton.edu/data/puias/DevToolset/6.5/x86_64
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: yum install package to build openfoam.
+      yum: name={{item}} state=latest disable_gpg_check=yes
+      with_items:
+        - devtoolset-1.1-runtime 
+        - devtoolset-1.1-gcc.x86_64
+        - devtoolset-1.1-gcc-c++.x86_64
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+
+    - name: apt-get install pakage
+      apt: name={{item}} state=latest
+      with_items:
+          - build-essential
+          - flex
+          - bison
+          - cmake
+          - zlib1g-dev
+          - qt4-dev-tools
+          - libqt4-dev
+          - gnuplot
+          - libreadline-dev
+          - libncurses-dev
+          - libxt-dev
+          - libscotch-dev
+          - libopenmpi-dev
+          - libcgal-dev
+      sudo: yes
+      when: ansible_distribution == "Ubuntu"
+
+
+    - name: edit foamDotFile 
+      replace: dest={{foam_prefix}}/OpenFOAM-{{foam_version}}/etc/bashrc
+               regexp='^foamInstall=\$HOME/\$WM_PROJECT'
+               replace='# foamInstall=$HOME/$WM_PROJECT'
+      sudo: yes
+
+    - name: edit foamDotFile 
+      replace: dest={{foam_prefix}}/OpenFOAM-{{foam_version}}/etc/bashrc
+               regexp='^# foamInstall=/opt/\$WM_PROJECT'
+               replace='foamInstall=/opt/$WM_PROJECT'
+      sudo: yes
+
+    - name: ./Allwmake on CentOS
+      shell: >-
+        export PATH=/usr/lib64/openmpi/bin/:$PATH &&
+        export LD_LIBRARY_PATH=/usr/lib64/openmpi/lib/:$LD_LIBRARY_PATH &&
+        source /opt/rh/devtoolset-1.1/enable &&
+        source {{foam_prefix}}/OpenFOAM-{{foam_version}}/etc/bashrc &&
+        cd {{foam_prefix}}/OpenFOAM-{{foam_version}} &&
+        ./Allwmake
+      sudo: yes
+      when: ansible_distribution == "CentOS"
+
+    - name: ./Allwmake on Ubuntu
+      shell: >-
+        . {{foam_prefix}}/OpenFOAM-{{foam_version}}/etc/bashrc &&
+        cd {{foam_prefix}}/OpenFOAM-{{foam_version}} &&
+        ./Allwmake
+      sudo: yes
+      when: ansible_distribution == "Ubuntu"
